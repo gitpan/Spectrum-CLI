@@ -8,7 +8,7 @@ __END__
 # UserReport - a sample script demonstrating a perl report using Spectrum::CLI
 # Copyright (C) 2000  Dave Plonka
 
-# $Id: UserReport.PL,v 1.2 2000/01/21 21:22:16 dplonka Exp $
+# $Id: UserReport.PL,v 1.3 2003/12/16 15:54:28 dplonka Exp $
 # Dave Plonka <plonka@doit.wisc.edu>
 
 =head1 NAME
@@ -62,7 +62,8 @@ foreach my $type ($cli->show_types) {
 foreach $model ($opt_O? $cli->seek(
 				 "attr=$A{User}{Modeltype_Name}{Id},value=User")
 				 : $cli->show_models) {
-   next unless ($opt_O || 'User' eq $model->{MTypeName});
+   next unless $opt_O ||
+		$model->{MTypeName} =~ m/^User\s+/;
    $Users{$model->{MName}} = $model;
    foreach $attr ($opt_O? $cli->show_attributes(
 				   "attr=$A{User}{Model_Name}{Id}",

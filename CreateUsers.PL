@@ -8,7 +8,7 @@ __END__
 # CreateUsers - a script to create Spectrum users
 # Copyright (C) 2000  Dave Plonka
 
-# $Id: CreateUsers.PL,v 1.11 2000/01/21 21:22:16 dplonka Exp $
+# $Id: CreateUsers.PL,v 1.12 2003/12/16 15:55:09 dplonka Exp $
 # Dave Plonka <plonka@doit.wisc.edu>
 
 =head1 NAME
@@ -17,10 +17,12 @@ CreateUsers - a script to create Spectrum users
 
 =head1 SYNOPSIS
 
- CreateUsers [-h] [-vV] [-g group[,group2[,...]]]
+ CreateUsers [-h] [-vV] [-t|-T] [-g group[,group2[,...]]]
      -h - 'h'elp (shows this usage information)
      -v - be 'v'erbose (with messages)
      -V - be 'V'ery verbose (with messages)
+     -t - create TroubleShooter models for these users as well
+     -T - just create TroubleShooter models, not User models
      -g group - create the users that are members of the specified group(s)
 		group can be a regular expression, e.g. "-g spec.*".
 		If more than one group or pattern is used they should
@@ -47,7 +49,7 @@ use Spectrum::CLI 1.005;
 
 my %opt = ( v => 0, V => 0, h => 0 );
 
-getopts('vVhg:', \%opt) || usage(2);
+getopts('vVhg:tT', \%opt) || usage(2);
 $opt{h} && usage(0);
 
 # { user should have one of these shells:
@@ -69,13 +71,16 @@ print("valid shells: \"", join('", "', @safe_shell), "\"\n") if $opt{v};
 my(%M, %T, %A); # hashes of models, types, and associations
 
 my $session = new Spectrum::CLI { verbose => $opt{v}, Verbose => $opt{V} };
+if (!ref($session)) {
+   die "Failed to create Spectrum::CLI session!\n"
+}
 
 die unless map { $M{Name}{$_->{MName}} = $_ } $session->show_models;
 die unless map { $T{Name}{$_->{Name}} = $_ } $session->show_types;
 
 die unless defined $T{Name}{User}{Handle};
 
-foreach my $type (qw(User UserGroup)) {
+foreach my $type (qw(User UserGroup TroubleShooter)) {
    die unless map {
                  $A{$type}{Name}{$_->{Name}} = $_
               } $session->show_attributes("mth=$T{Name}{$type}{Handle}")
@@ -91,6 +96,9 @@ die unless defined $A{User}{Name}{User_Community_String}; # ADMIN,0
 die unless defined $A{User}{Name}{Security_String}; # ADMIN
 
 die unless defined $A{UserGroup}{Name}{Model_Name};
+
+die unless defined $A{TroubleShooter}{Name}{Model_Name};
+die unless defined $A{TroubleShooter}{Name}{EmailAddress};
 # }
 
 my(@group);
@@ -101,7 +109,7 @@ if ($opt{g}) {
 }
 die unless @group;
 
-my(%User, %UserGroup);
+my(%User, %UserGroup, %TroubleShooter);
 map {
    $User{$_->{MName}} = $_
 } $session->seek("attr=$A{User}{Name}{Modeltype_Name}{Id},val=User");
@@ -110,10 +118,14 @@ map {
    $UserGroup{$_->{MName}} = $_
 } $session->seek("attr=$A{UserGroup}{Name}{Modeltype_Name}{Id},val=UserGroup");
 
+map {
+   $TroubleShooter{$_->{MName}} = $_
+} $session->seek("attr=$A{TroubleShooter}{Name}{Modeltype_Name}{Id},val=TroubleShooter");
+
 while (my($name, $passwd, $gid, $members) = getgrent) {
    next unless grep { $name =~ m/^${_}$/ } @group;
 
-   if (!defined $UserGroup{$name}{MHandle}) {
+   if (!$opt{T} && !defined $UserGroup{$name}{MHandle}) {
       if (!$session->create_model("mth=$T{Name}{UserGroup}{Handle}",
               "attr=$A{UserGroup}{Name}{Model_Name}{Id},val=${name}")) {
 	 warn "create_model failed:\n[", $session->results, "]\n";
@@ -121,7 +133,7 @@ while (my($name, $passwd, $gid, $members) = getgrent) {
       }
       my $mh = model_handle($session->results);
       if (!$mh) {
-	 warn "Model handle not found in results:\n[", $session->results, "]\n";
+	 warn "UserGroup model handle not found in results:\n[", $session->results, "]\n";
 	 next
       }
       print "created model ${mh} (UserGroup \"$name\").\n" if $opt{v};
@@ -141,7 +153,7 @@ while (my($name, $passwd, $gid, $members) = getgrent) {
          next
       }
       my($full_name) = split(',', $gcos);
-      if (!defined $User{$user}{MHandle}) {
+      if (!$opt{T} && !defined $User{$user}{MHandle}) {
 	 if (!$session->create_model("mth=$T{Name}{User}{Handle}",
                 "attr=$A{User}{Name}{Model_Name}{Id},val=${login}",
                 "attr=$A{User}{Name}{User_Full_Name}{Id},val='${full_name}'")) {
@@ -150,7 +162,7 @@ while (my($name, $passwd, $gid, $members) = getgrent) {
 	 }
 	 my $mh = model_handle($session->results);
 	 if (!$mh) {
-	    warn "model handle not found in results:\n[", $session->results, "]\n";
+	    warn "User model handle not found in results:\n[", $session->results, "]\n";
 	    next
          }
          print "created model ${mh} (User \"$login\").\n" if $opt{v};
@@ -164,6 +176,20 @@ while (my($name, $passwd, $gid, $members) = getgrent) {
 		 "rmh=$M{Name}{$user}{MHandle}")) {
             warn "creation of \"$UserGroup{$name}{MHandle} Has_Member rmh=$M{Name}{$user}{MHandle}\" association failed:\n[", $session->results, "]\n"
          }
+      }
+      if (($opt{T} || $opt{t}) && !defined($TroubleShooter{$user}{MHandle})) {
+	 if (!$session->create_model("mth=$T{Name}{TroubleShooter}{Handle}",
+              "attr=$A{TroubleShooter}{Name}{Model_Name}{Id},val=${login}",
+              "attr=$A{TroubleShooter}{Name}{EmailAddress}{Id},val=${login}")) {
+	    warn "create_model failed:\n[", $session->results, "]\n";
+	    next
+	 }
+	 my $mh = model_handle($session->results);
+	 if (!$mh) {
+	    warn "TroubleShooter model handle not found in results:\n[", $session->results, "]\n";
+	    next
+         }
+	 # FIXME - create Is_Assigned association, lmh=User rmh=TroubleShooter
       }
    }
 }
@@ -185,10 +211,12 @@ sub model_handle {
 sub usage {
    my $status = shift;
 print <<_EOF_
-usage: $FindBin::Script [-h] [-vV] [-g group[,group2[,...]]]
+usage: $FindBin::Script [-h] [-vV] [-t|-T] [-g group[,group2[,...]]]
        -h - 'h'elp (shows this usage information)
        -v - be 'v'erbose (with messages)
        -V - be 'V'ery verbose (with messages)
+       -t - create TroubleShooter models for these users as well
+       -T - just create TroubleShooter models, not User models
        -g group - create the users that are members of the specified group(s).
 		  group can be a regular expression, e.g. "-g spec.*".
 		  If more than one group or pattern is used they should

@@ -1,5 +1,5 @@
 #  Spectrum::CLI - a perl module for use with Spectrum's Command Line Interface
-#  Copyright (C) 1999-2000  Dave Plonka
+#  Copyright (C) 1999-2003  Dave Plonka
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 #  along with this program; if not, write to the Free Software
 #  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-# $Id: CLI.pm,v 1.14 2000/02/23 18:12:22 dplonka Exp $
+# $Id: CLI.pm,v 1.16 2003/12/16 15:50:04 dplonka Exp $
 # Dave Plonka <plonka@doit.wisc.edu>
 
 package Spectrum::CLI;
@@ -34,7 +34,7 @@ require AutoLoader;
 
 @Spectrum::CLI::ISA = qw(Exporter AutoLoader);
 # convert the RCS revision to a reasonable Exporter VERSION:
-'$Revision: 1.14 $' =~ m/(\d+)\.(\d+)/ && (( $Spectrum::CLI::VERSION ) = sprintf("%d.%03d", $1, $2));
+'$Revision: 1.16 $' =~ m/(\d+)\.(\d+)/ && (( $Spectrum::CLI::VERSION ) = sprintf("%d.%03d", $1, $2));
 
 sub new {
    my $class = shift;
@@ -92,11 +92,13 @@ sub new {
    my $entry;
    my $dir = $self->{dir}; # kludge since perl doesn't like this in a glob
    foreach $entry (<$dir/*>) {
-      if ($entry =~ m;/VnmShd$;) {
-	 $daemon = $entry
+      my $cmd =  basename $entry; 
+      $cmd    =~ s/.exe$//;
+      if ($cmd =~ m;VnmShd$;) {
+	 $daemon = $entry;
       }
-      next if $entry =~ m;/(Vnm|stop)Shd$;; # skip these executables
-      push(@{$self->{command}}, basename $entry) if (-f $entry && -x _)
+      next if $cmd =~ m;(Vnm|stop)Shd$;; # skip these executables
+      push(@{$self->{command}}, $cmd) if (-f $entry && -x _)
 
    }
    warn "valid vnmsh commands: @{$self->{command}}\n" if $self->{Verbose};
@@ -361,7 +363,11 @@ sub AUTOLOAD {
 sub DESTROY {
    my $self = shift;
    die unless ref $self;
-   system($self->dir . "/disconnect >/dev/null 2>&1");
+   if ( $^O =~ /^(ms)?(dos|win(32|nt)?)/i ) {
+      system($self->dir . "/disconnect >null 2>&1");
+   } else {
+      system($self->dir . "/disconnect >/dev/null 2>&1");
+   }
 }
 
 1;
@@ -684,7 +690,7 @@ and command and argument combination.
 
 Dave Plonka <plonka@doit.wisc.edu>
 
-Copyright (C) 1999-2000  Dave Plonka.
+Copyright (C) 1999-2003  Dave Plonka.
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation; either version 2 of the License, or
